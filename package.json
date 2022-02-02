@@ -1,0 +1,42 @@
+{
+  "name": "broadcast-backend",
+  "version": "1.0.0",
+  "description": "Backend for the Broadcasting System",
+  "scripts": {
+    "start": "sls offline start --skipCacheInvalidation --allowCache --httpPort 3001",
+    "lint": "eslint . --ext .js",
+    "bump": "yarn version --patch",
+    "bump:minor": "yarn version --minor",
+    "bump:major": "yarn version --major"
+  },
+  "keywords": [],
+  "author": "Ben Nylund <ben@nylund.us>",
+  "devDependencies": {
+    "eslint": "^8.6.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-prettier": "^4.0.0",
+    "prettier": "^2.5.1",
+    "serverless-dotenv-plugin": "^3.12.2",
+    "serverless-offline": "^8.3.1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.48.0",
+    "@middy/core": "^2.5.4",
+    "@middy/http-cors": "^2.5.6",
+    "@middy/http-error-handler": "^2.5.4",
+    "@middy/http-json-body-parser": "^2.5.4",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.19.1",
+    "connect-timeout": "^1.9.0",
+    "dotenv": "^14.2.0",
+    "express": "^4.17.2",
+    "http-errors": "^2.0.0",
+    "joi": "^17.5.0",
+    "joi-objectid": "^4.0.2",
+    "jsonwebtoken": "^8.5.1",
+    "mongoose": "^6.1.5",
+    "pug": "^3.0.2",
+    "serverless-http": "^2.7.0",
+    "underscore": "^1.13.2"
+  }
+}
