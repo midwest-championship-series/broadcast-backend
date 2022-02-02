@@ -43,11 +43,6 @@ router.use(
   require('../../middleware/auth').authRequired,
   require('./platforms').default,
 )
-router.use(
-  '/users',
-  require('../../middleware/auth').attachUser,
-  require('../../middleware/auth').authRequired,
-  require('./users').default,
-)
+router.use('/users', require('./users').default)
 
 module.exports.default = router
