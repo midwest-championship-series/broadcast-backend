@@ -1,3 +1,12 @@
+/*
+
+  -- Relay Installation Script --
+
+  This script lies inside a public S3 bucket so that any EC2 instance
+  can access it and run it. However, EC2 Instances come pre-loaded with
+  the configuration required to actually download the relay.
+
+*/
 const config = require('./config.json')
 
 const {
@@ -55,9 +64,9 @@ async function getLatest(Bucket) {
   return latest
 }
 
-getLatest('rl-relay-artifacts')
+getLatest(config.BUCKET)
   .then((val) => {
-    getObject('rl-relay-artifacts', val.Key)
+    getObject(config.BUCKET, val.Key)
       .then((data) => {
         fs.writeFileSync('/app/relay.zip', data)
       })
