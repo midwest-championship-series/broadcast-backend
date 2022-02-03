@@ -29,9 +29,17 @@ router.get('/:id/invitations', async (req, res) => {
           "You don't have permission to get invitations in this organization.",
       })
     }
-    const invites = await Invitation.find({
+    let invites = await Invitation.find({
       organization_id: new Types.ObjectId(id),
     })
+
+    invites = await Promise.all(
+      invites.map(async (val, _) => {
+        await val.populate('from', '-password -organizations')
+        val.organization = await Organization.findById(val.organization_id)
+        return val
+      }),
+    )
 
     return res.status(200).send(invites)
   } catch (err) {

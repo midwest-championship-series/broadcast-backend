@@ -12,6 +12,7 @@ router.get('/', async (req, res) => {
     invites = await Promise.all(
       invites.map(async (val, _) => {
         await val.populate('from', '-password -organizations')
+        val.organization = await Organization.findById(val.organization_id)
         return val
       }),
     )
