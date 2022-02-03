@@ -8,7 +8,13 @@ const { sendEmail } = require('../../../services/aws')
 
 router.get('/', async (req, res) => {
   try {
-    const invites = await Invitation.find({ email: req.user.email })
+    let invites = await Invitation.find({ email: req.user.email })
+    invites = await Promise.all(
+      invites.map(async (val, _) => {
+        await val.populate('from', '-password -organizations')
+        return val
+      }),
+    )
     return res.status(200).send(invites)
   } catch (err) {
     return res.status(500).send({ error: 'An unknown error occurred.' })
