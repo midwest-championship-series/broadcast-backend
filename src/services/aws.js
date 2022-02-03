@@ -1,17 +1,16 @@
 // Setup SES
 const AWS = require('aws-sdk')
-const { Types } = require('mongoose')
 const { compileTemplate } = require('../templates')
 
 if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
   require('dotenv').config()
-}
 
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1',
-})
+  AWS.config.update({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION || 'us-east-1',
+  })
+}
 
 const ses = new AWS.SES({ apiVersion: '2010-12-01' })
 const ec2 = new AWS.EC2({ apiVersion: '2016-11-15' })

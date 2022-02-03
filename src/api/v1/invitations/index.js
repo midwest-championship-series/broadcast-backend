@@ -6,6 +6,15 @@ const { Organization } = require('../../../models/Organization')
 const { Invitation } = require('../../../models/Invitation')
 const { sendEmail } = require('../../../services/aws')
 
+router.get('/', async (req, res) => {
+  try {
+    const invites = await Invitation.find({ email: req.user.email })
+    return res.status(200).send(invites)
+  } catch (err) {
+    return res.status(500).send({ error: 'An unknown error occurred.' })
+  }
+})
+
 router.get('/:id', async (req, res) => {
   const { id } = req.params
   try {
