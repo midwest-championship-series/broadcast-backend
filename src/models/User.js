@@ -13,12 +13,6 @@ const userSchema = new Schema({
   firstname: { type: String, required: true },
   lastname: { type: String, required: true },
   password: { type: String, required: true, minlength: 8 },
-  organizations: {
-    type: [Schema.Types.ObjectId],
-    required: true,
-    default: [],
-    ref: 'Organization',
-  },
   createdAt: { type: Date, required: true, default: Date.now },
   updatedAt: { type: Date, required: true, default: Date.now },
 })

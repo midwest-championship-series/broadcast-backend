@@ -7,7 +7,7 @@
   the configuration required to actually download the relay.
 
 */
-const config = require('./config.json')
+require('/usr/lib/node_modules/dotenv').config()
 
 const {
   S3Client,
@@ -16,10 +16,10 @@ const {
 } = require('/usr/lib/node_modules/@aws-sdk/client-s3')
 const client = new S3Client({
   credentials: {
-    accessKeyId: config.AWS_ACCESS_KEY_ID,
-    secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
-  region: config.REGION,
+  region: process.env.REGION,
 })
 
 async function getObject(Bucket, Key) {
@@ -57,16 +57,16 @@ async function getLatest(Bucket) {
       response.Contents[i].Key.startsWith('relay-') &&
       response.Contents[i].Key.endsWith('.zip')
     ) {
-      latest = val
+      latest = response.Contents[i]
     }
   }
 
   return latest
 }
 
-getLatest(config.BUCKET)
+getLatest(process.env.BUCKET)
   .then((val) => {
-    getObject(config.BUCKET, val.Key)
+    getObject(process.env.BUCKET, val.Key)
       .then((data) => {
         fs.writeFileSync('/app/relay.zip', data)
       })

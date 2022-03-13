@@ -11,8 +11,8 @@ router.get('/', async (req, res) => {
     let invites = await Invitation.find({ email: req.user.email })
     invites = await Promise.all(
       invites.map(async (val, _) => {
-        await val.populate('from', '-password -organizations')
-        val.organization = await Organization.findById(val.organization_id)
+        await val.populate('from', '-password -organizations -updatedAt')
+        await val.populate('organization')
         return val
       }),
     )
@@ -48,7 +48,7 @@ router.get('/:id', async (req, res) => {
 
 const orgSchema = Joi.object().keys({
   email: Joi.string().email().required(),
-  organization_id: Joi.objectId().required(),
+  organization: Joi.objectId().required(),
 })
 
 router.post('/', async (req, res) => {
@@ -60,7 +60,7 @@ router.post('/', async (req, res) => {
       return res.status(400).send({ error: 'Invitation data not valid.' })
     }
 
-    const org = await Organization.findById(data.organization_id)
+    const org = await Organization.findById(data.organization)
     if (!org) {
       return res.status(404).send({ error: 'Organization not found.' })
     }
@@ -80,7 +80,7 @@ router.post('/', async (req, res) => {
 
     const inv = await Invitation.findOne({
       email: data.email,
-      organization_id: data.organization_id,
+      organization: data.organization,
     })
     if (inv) {
       return res
@@ -120,7 +120,12 @@ router.delete('/:id', async (req, res) => {
     const invite = await Invitation.findById(id)
     if (!invite) return res.status(404).send({ error: 'Invitation not found.' })
 
-    const org = await Organization.findById(invite.organization_id)
+    if (invite.email === req.user.email) {
+      await invite.delete()
+      return res.status(200).send({ message: 'Invitation removed.' })
+    }
+
+    const org = await Organization.findById(invite.organization)
     if (!org) {
       return res
         .status(404)
@@ -161,7 +166,7 @@ router.post('/:id', async (req, res) => {
         .status(403)
         .send({ error: 'Invitation not valid for current user.' })
 
-    const org = await Organization.findById(invite.organization_id)
+    const org = await Organization.findById(invite.organization)
 
     if (!org) {
       return res
@@ -180,6 +185,7 @@ router.post('/:id', async (req, res) => {
       role: 'member',
     })
     await org.save()
+    await invite.delete()
 
     return res.status(200).send({ message: 'Invitation accepted.' })
   } catch (err) {

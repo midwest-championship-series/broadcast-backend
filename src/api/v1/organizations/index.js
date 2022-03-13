@@ -2,7 +2,7 @@ const router = require('express').Router()
 const Joi = require('joi')
 Joi.objectId = require('joi-objectid')(Joi)
 const { pick } = require('underscore')
-const { SchemaTypes } = require('mongoose')
+const { SchemaTypes, Types } = require('mongoose')
 const { Invitation } = require('../../../models/Invitation')
 const { Platform } = require('../../../models/Platform')
 const { Organization } = require('../../../models/Organization')
@@ -30,13 +30,13 @@ router.get('/:id/invitations', async (req, res) => {
       })
     }
     let invites = await Invitation.find({
-      organization_id: new Types.ObjectId(id),
+      organization: new Types.ObjectId(id),
     })
 
     invites = await Promise.all(
       invites.map(async (val, _) => {
-        await val.populate('from', '-password -organizations')
-        val.organization = await Organization.findById(val.organization_id)
+        await val.populate('from', '-password -updatedAt')
+        await val.populate('organization')
         return val
       }),
     )
@@ -72,74 +72,133 @@ router.get('/:id/platforms', async (req, res) => {
   }
 })
 
-router.get('/:id/servers', async (req, res) => {
-  const { id } = req.params
-  const { populate } = req.query
+router.get(
+  '/:id/servers',
+  require('connect-timeout')('10s'),
+  async (req, res) => {
+    const { id } = req.params
+    const { populate } = req.query
 
+    try {
+      const org = await Organization.findById(id)
+      if (!org) {
+        return res.status(404).send({ error: 'Organization not found.' })
+      }
+
+      if (!org.members.find((x) => String(x.user) === String(req.user._id))) {
+        return res.status(403).send({
+          error: "You aren't a member of this organization.",
+        })
+      }
+      let servers = await Server.find({
+        organization_id: new Types.ObjectId(id),
+      })
+
+      if (populate === 'true') {
+        const instance_ids = []
+        for (let i = 0; i < servers.length; i++) {
+          instance_ids.push(servers[i].instance_id)
+        }
+
+        const instances = []
+        try {
+          instances.push(...(await getEC2Instances(instance_ids)))
+        } catch (err) {}
+
+        servers = await Promise.all(
+          servers.map(async (val) => {
+            let instance = instances.find(
+              (x) => x.InstanceId === val.instance_id,
+            )
+            return { ...val, instance }
+          }),
+        )
+      }
+
+      return res.status(200).send(servers)
+    } catch (err) {
+      console.log(err)
+      return res.status(500).send({ error: 'An unknown error occurred.' })
+    }
+  },
+)
+
+router.get('/', async (req, res) => {
   try {
-    const org = await Organization.findById(id)
+    // MODIFY
+    const orgs = await Organization.find({
+      'members.user': req.user._id,
+    }).populate('members.user', '-password -updatedAt')
+    return res.status(200).send(orgs)
+  } catch (err) {
+    console.log(err)
+    return res.status(500).send({ error: 'An unknown error occurred.' })
+  }
+})
+
+router.get('/:id', require('connect-timeout')('10s'), async (req, res) => {
+  const { id } = req.params
+  const { servers, invitations, platforms, members } = req.query
+  try {
+    const orgQuery = Organization.findById(id).lean()
+
+    if (members) orgQuery.populate('members.user', '-password -updatedAt')
+
+    const org = await orgQuery
+
     if (!org) {
       return res.status(404).send({ error: 'Organization not found.' })
     }
 
-    if (!org.members.find((x) => String(x.user) === String(req.user._id))) {
+    if (!org.members.find((x) => String(x.user._id) === String(req.user._id))) {
       return res.status(403).send({
         error: "You aren't a member of this organization.",
       })
     }
-    let servers = await Server.find({ organization_id: new Types.ObjectId(id) })
 
-    if (populate === 'true') {
+    if (invitations) {
+      org.invitations = await Promise.all(
+        (
+          await Invitation.find({
+            organization: org._id,
+          })
+        ).map(async (val, _) => {
+          await val.populate('from', '-password -updatedAt')
+          return val
+        }),
+      )
+    }
+
+    if (platforms) {
+      org.platforms = await Platform.find({
+        organization: new Types.ObjectId(id),
+      })
+    }
+
+    if (servers) {
+      org.servers = await Server.find({
+        organization_id: new Types.ObjectId(id),
+      }).lean()
+
       const instance_ids = []
-      for (let i = 0; i < servers.length; i++) {
-        instance_ids.push(servers[i].instance_id)
+      for (let i = 0; i < org.servers.length; i++) {
+        instance_ids.push(org.servers[i].instance_id)
       }
 
       const instances = []
-      try {
+      if (instance_ids.length > 0) {
         instances.push(...(await getEC2Instances(instance_ids)))
-      } catch (err) {}
+      }
 
-      servers = await Promise.all(
-        servers.map(async (val) => {
+      org.servers = await Promise.all(
+        org.servers.map(async (val) => {
           let instance = instances.find((x) => x.InstanceId === val.instance_id)
           return { ...val, instance }
         }),
       )
     }
 
-    return res.status(200).send(servers)
-  } catch (err) {
-    console.log(err)
-    return res.status(500).send({ error: 'An unknown error occurred.' })
-  }
-})
-
-router.get('/', async (req, res) => {
-  try {
-    await req.user.populate('organizations')
-    await req.user.populate(
-      'organizations.members.user',
-      '-password -organizations',
-    )
-    return res.status(200).send(req.user.organizations)
-  } catch (err) {
-    console.log(err)
-    return res.status(500).send({ error: 'An unknown error occurred.' })
-  }
-})
-
-router.get('/:id', async (req, res) => {
-  const { id } = req.params
-  try {
-    if (!req.user.organizations.find((x) => String(x) === id))
-      return res.status(404).send({ error: 'Organization not found.' })
-
-    const org = await Organization.findById(id)
-      .populate('members.user', '-password -organizations')
-      .exec()
-
-    return res.status(200).send(org)
+    if (!res.headersSent) return res.status(200).send(org)
   } catch (err) {
     console.log(err)
     return res.status(500).send({ error: 'An unknown error occurred.' })
@@ -148,6 +207,7 @@ router.get('/:id', async (req, res) => {
 
 const orgSchema = Joi.object().keys({
   name: Joi.string().required(),
+  color: Joi.string().pattern(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i),
   description: Joi.string(),
 })
 
@@ -168,9 +228,6 @@ router.post('/', async (req, res) => {
       role: 'owner',
     })
 
-    req.user.organizations.push(org._id)
-    await req.user.save()
-
     await org.validate()
     await org.save()
 
@@ -184,6 +241,7 @@ router.post('/', async (req, res) => {
 const modifySchema = Joi.object().keys({
   name: Joi.string().min(2),
   description: Joi.string(),
+  color: Joi.string().pattern(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i),
 })
 
 router.patch('/:id', async (req, res) => {
@@ -259,10 +317,6 @@ router.delete('/:id', async (req, res) => {
         .send({ error: 'A server still exists in this organization.' })
 
     await org.delete()
-    user.organizations = user.organizations.filter(
-      (x) => String(x) !== String(org._id),
-    )
-    await user.save()
 
     return res.status(200).send({ message: 'Organization removed.' })
   } catch (err) {
@@ -275,9 +329,6 @@ router.delete('/:id/members/:user_id', async (req, res) => {
   const { id, user_id } = req.params
 
   try {
-    if (!req.user.organizations.find((x) => String(x) === id))
-      return res.status(404).send({ error: 'Organization not found.' })
-
     const org = await Organization.findById(id).populate('members.user')
     if (
       !org.members.find(
@@ -298,6 +349,7 @@ router.delete('/:id/members/:user_id', async (req, res) => {
 
     return res.status(200).send({ message: 'User removed from organization.' })
   } catch (err) {
+    console.log(err)
     return res
       .status(500)
       .send({ error: 'Failed to remove user from organization.' })

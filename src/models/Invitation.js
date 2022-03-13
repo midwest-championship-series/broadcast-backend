@@ -8,8 +8,12 @@ const invitationSchema = new Schema({
     unique: true,
     validate: validateEmail,
   },
-  organization_id: { type: Schema.Types.ObjectId, required: true },
-  from: { type: Schema.Types.ObjectId, required: true },
+  organization: {
+    type: Schema.Types.ObjectId,
+    required: true,
+    ref: 'Organization',
+  },
+  from: { type: Schema.Types.ObjectId, required: true, ref: 'User' },
   createdAt: { type: Date, required: true, default: Date.now },
   updatedAt: { type: Date, required: true, default: Date.now },
 })

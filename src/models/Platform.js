@@ -1,5 +1,7 @@
 const { Schema, model } = require('mongoose')
 
+const hexRegex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+
 const platformSchema = new Schema({
   baseUrl: { type: String, required: true },
   apiKey: { type: String, default: '' },
@@ -9,6 +11,7 @@ const platformSchema = new Schema({
     required: true,
     ref: 'Organization',
   },
+  color: { type: String, required: true, match: hexRegex, default: '#000' },
   createdAt: { type: Date, required: true, default: Date.now },
   updatedAt: { type: Date, required: true, default: Date.now },
 })

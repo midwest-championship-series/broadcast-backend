@@ -15,6 +15,7 @@ if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
 const ses = new AWS.SES({ apiVersion: '2010-12-01' })
 const ec2 = new AWS.EC2({ apiVersion: '2016-11-15' })
 const r53 = new AWS.Route53({ apiVersion: '2013-04-01' })
+let cache = []
 
 module.exports.sendEmail = async (to, subject, template, templateData) => {
   const params = {
@@ -40,17 +41,50 @@ module.exports.sendEmail = async (to, subject, template, templateData) => {
 
 module.exports.getEC2Instances = (instances) => {
   return new Promise((resolve, reject) => {
+    if (!Array.isArray(instances)) instances = [instances]
+
+    // Check cache first. Cache lasts 10 seconds.
+    const cached = []
+
+    for (let i = 0; i < instances.length; i++) {
+      const cacheHit = cache.find((x) => x.id === instances[i])
+      if (cacheHit && Date.now() - new Date(cacheHit.date).getTime() < 10000) {
+        cached.push(cacheHit.Instance)
+      }
+    }
+
+    const toGrab = instances.filter(
+      (x) => !cached.find((y) => y.InstanceId === x),
+    )
+
+    if (toGrab.length === 0) {
+      resolve(cached)
+      return
+    }
+
     ec2.describeInstances(
       {
-        InstanceIds: Array.isArray(instances) ? instances : [instances],
+        InstanceIds: toGrab,
       },
       (err, data) => {
         if (err) {
-          reject(err)
+          resolve(cached)
         } else {
-          const instances = []
+          const instances = cached
           for (let i = 0; i < data.Reservations.length; i++) {
             instances.push(...data.Reservations[i].Instances)
+
+            // Update cache
+            for (let y = 0; y < data.Reservations[i].Instances.length; y++) {
+              cache = cache.filter(
+                (x) => x.id !== data.Reservations[i].Instances[y].InstanceId,
+              )
+              cache.push({
+                id: data.Reservations[i].Instances[y].InstanceId,
+                date: Date.now(),
+                Instance: data.Reservations[i].Instances[y],
+              })
+            }
           }
           resolve(instances)
         }
@@ -193,38 +227,42 @@ route53:
   recordsSet:
     - name: "${domain}."
       type: "A"
-      ttl: 60`
+      ttl: 10`
 }
 
 // Node is available in UserData, tested on a deployment
 const getUserData = (domain) => {
-  const data = {
-    HOSTED_ZONE_ID: process.env.HOSTED_ZONE_ID,
-    DOMAIN: domain,
-    BUCKET: process.env.RELAY_BUCKET,
-    AWS_ACCESS_KEY_ID: process.env.EC2_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: process.env.EC2_SECRET_ACCESS_KEY,
-    REGION: 'us-east-1',
-  }
+  const data = `
+HOSTED_ZONE_ID="${process.env.HOSTED_ZONE_ID}"
+DOMAIN="${domain}"
+BUCKET="${process.env.RELAY_BUCKET}"
+AWS_ACCESS_KEY_ID="${process.env.EC2_ACCESS_KEY_ID}"
+AWS_SECRET_ACCESS_KEY="${process.env.EC2_SECRET_ACCESS_KEY}"
+REGION="us-east-1"
+MONGO_URL="${process.env.MONGO_URL}"
+JWT_SIGNING_KEY="${process.env.JWT_SIGNING_KEY}"
+  `
   return `#!/bin/bash
 mkdir /app
-echo '${JSON.stringify(data, null, 2)}' > /app/config.json
-apt install unzip > /app/unzipinstall
-npm install -g aws-sdk @aws-sdk/client-s3 pm2 > /app/npminstall
+echo '${data}' > /app/.env
+apt install -y unzip > /app/unzipinstall
+apt install -y certbot > /app/certbotinstall
+npm install -g aws-sdk @aws-sdk/client-s3 pm2 dotenv > /app/npminstall
 env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u root --hp /app > /app/pm2startup
 wget -O /app/install-relay.js https://broadcasting-system-files.s3.amazonaws.com/install-relay.js > /app/installer
 cd /app
 node install-relay.js > /app/installrelay.log
 unzip /app/relay.zip
 yarn > /app/yarnlog
-PM2_HOME='/app/.pm2' pm2 start yarn --name "Relay Server" -- start:prod > /app/pm2start
-PM2_HOME='/app/.pm2' pm2 save
 mkdir /app/ddns-route53
 echo '${getDDNSConfig(domain)}' > /app/ddns-route53/ddns-route53.yml
 cd /app/ddns-route53 && wget -qO- https://github.com/crazy-max/ddns-route53/releases/download/v2.8.0/ddns-route53_2.8.0_linux_amd64.tar.gz | tar -zxvf - ddns-route53
 echo '${getService()}' > /etc/systemd/system/ddns-route53.service
 systemctl enable ddns-route53
 systemctl start ddns-route53
+sleep 10
+PM2_HOME='/app/.pm2' pm2 start yarn --name "Relay Server" -- start:prod > /app/pm2start
+PM2_HOME='/app/.pm2' pm2 save
 `
 }
 
@@ -240,7 +278,7 @@ module.exports.deployEC2Instance = async (sid) => {
               Name: `${sid}.nylund.us`,
               Type: 'A',
               ResourceRecords: [{ Value: '127.0.0.1' }],
-              TTL: 60,
+              TTL: 10,
             },
           },
         ],
